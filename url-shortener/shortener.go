@@ -81,7 +81,11 @@ func createShortenHandler(s *URLStore) func(w http.ResponseWriter, r *http.Reque
 			return
 		}
 		s.Set(key, data.Url)
-		fmt.Fprintf(w, "key: %s", key)
+		scheme := "http"
+		if r.TLS != nil {
+			scheme = "https"
+		}
+		fmt.Fprintf(w, "%s://%s/%s", scheme, r.Host, key)
 	}
 }
 
