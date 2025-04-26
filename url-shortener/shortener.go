@@ -1,12 +1,15 @@
 package main
 
 import (
+	"bufio"
 	"crypto/rand"
 	"encoding/json"
 	"fmt"
 	"io"
 	"log"
 	"net/http"
+	"os"
+	"strings"
 	"sync"
 )
 
@@ -17,6 +20,13 @@ type ShortenRequest struct {
 type URLStore struct {
 	urls  map[string]string
 	mutex sync.RWMutex
+}
+
+func NewUrlStore() *URLStore {
+	store := &URLStore{
+		urls: make(map[string]string),
+	}
+	return store
 }
 
 func (s *URLStore) Set(key, url string) {
@@ -32,11 +42,44 @@ func (s *URLStore) Get(key string) (string, bool) {
 	return url, exists
 }
 
-func NewUrlStore() *URLStore {
-	return &URLStore{
-		urls: make(map[string]string),
+func (s *URLStore) SyncToFile() {
+	s.mutex.Lock()
+	defer s.mutex.Unlock()
+	file, err := os.Create("urls.txt")
+	if err != nil {
+		fmt.Println("Error creating file:", err)
+		return
 	}
+  defer file.Close()
+
+	writer := bufio.NewWriter(file)
+	for key, value := range s.urls {
+    _, err := writer.Write([]byte(fmt.Sprintf("%v: %v\n", key, value)))
+    if err != nil {
+			panic(err)
+    }
+	}
+	writer.Flush()
+	return
 }
+
+func (s *URLStore) HydrateFromFile() {
+	file, err := os.Open("urls.txt")
+	if err != nil {
+		log.Println(err)
+	}
+	scanner := bufio.NewScanner(file)
+	for scanner.Scan() {
+			line := scanner.Text() // Get the line as a string
+			splits := strings.Split(line, ": ")
+			if len(splits) == 2 {
+				s.Set(splits[0], splits[1])
+			}
+	}
+	return 
+}
+
+
 
 func generateKey(length int) (string, error) {
 	const chars = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789"
@@ -81,6 +124,7 @@ func createShortenHandler(s *URLStore) func(w http.ResponseWriter, r *http.Reque
 			return
 		}
 		s.Set(key, data.Url)
+		s.SyncToFile()
 		scheme := "http"
 		if r.TLS != nil {
 			scheme = "https"
@@ -101,6 +145,7 @@ func createRedirectHandler(s *URLStore) func(w http.ResponseWriter, r *http.Requ
 }
 func main() {
 	store := NewUrlStore()
+	store.HydrateFromFile()
 	fmt.Println("Engine running...")
 
 	http.HandleFunc("/shorten", createShortenHandler(store))
