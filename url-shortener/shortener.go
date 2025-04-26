@@ -46,16 +46,17 @@ func (s *URLStore) SyncToFile() {
 	s.mutex.Lock()
 	defer s.mutex.Unlock()
 	file, err := os.Create("urls.txt")
+  defer file.Close()
 	if err != nil {
 		fmt.Println("Error creating file:", err)
 		return
 	}
-  defer file.Close()
 
 	writer := bufio.NewWriter(file)
 	for key, value := range s.urls {
     _, err := writer.Write([]byte(fmt.Sprintf("%v: %v\n", key, value)))
     if err != nil {
+			log.Println(err)
 			panic(err)
     }
 	}
@@ -65,6 +66,7 @@ func (s *URLStore) SyncToFile() {
 
 func (s *URLStore) HydrateFromFile() {
 	file, err := os.Open("urls.txt")
+  defer file.Close()
 	if err != nil {
 		log.Println(err)
 	}
@@ -84,11 +86,13 @@ func (s *URLStore) HydrateFromFile() {
 func generateKey(length int) (string, error) {
 	const chars = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789"
 	bytes := make([]byte, length)
+	// Inject bytes with random numbers
 	if _, err := rand.Read(bytes); err != nil {
 		return "", err
 	}
+	// Use the random numbers to pull random characters from chars
 	for i, b := range bytes {
-		bytes[i] = chars[b&byte(len(chars))]
+		bytes[i] = chars[b % byte(len(chars))]
 	}
 	return string(bytes), nil
 }
