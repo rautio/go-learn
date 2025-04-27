@@ -61,7 +61,6 @@ func (s *URLStore) SyncToFile() {
     }
 	}
 	writer.Flush()
-	return
 }
 
 func (s *URLStore) HydrateFromFile() {
@@ -78,7 +77,6 @@ func (s *URLStore) HydrateFromFile() {
 				s.Set(splits[0], splits[1])
 			}
 	}
-	return 
 }
 
 
@@ -121,11 +119,22 @@ func createShortenHandler(s *URLStore) func(w http.ResponseWriter, r *http.Reque
 			return
 		}
 		// generate key
-		key, err := generateKey(6)
-		if err != nil {
-			log.Println(err)
-			http.Error(w, "Error generating shortened key", http.StatusInternalServerError)
-			return
+		var key string
+		key_length := 6
+		for key == "" {
+			key_option, err := generateKey(key_length)
+			if err != nil {
+				log.Println(err)
+				http.Error(w, "Error generating shortened key", http.StatusInternalServerError)
+				return
+			}
+			_, exists := s.Get(key_option)
+			if !exists {
+				key = key_option
+			} else {
+				log.Println("Key collision. Incrementing key length.")
+				key_length += 1
+			}
 		}
 		s.Set(key, data.Url)
 		s.SyncToFile()
