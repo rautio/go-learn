@@ -11,20 +11,27 @@ import (
 	"os"
 	"strings"
 	"sync"
+	"time"
 )
 
 type ShortenRequest struct {
 	Url string `json:"url"`
 }
 
+type URL struct {
+	Url string `json:"url"`
+	Key string `json:"key"`
+	Created time.Time `json:"created"`
+}
+
 type URLStore struct {
-	urls  map[string]string
+	urls  map[string]URL
 	mutex sync.RWMutex
 }
 
 func NewUrlStore() *URLStore {
 	store := &URLStore{
-		urls: make(map[string]string),
+		urls: make(map[string]URL),
 	}
 	return store
 }
@@ -32,10 +39,10 @@ func NewUrlStore() *URLStore {
 func (s *URLStore) Set(key, url string) {
 	s.mutex.Lock()
 	defer s.mutex.Unlock()
-	s.urls[key] = url
+	s.urls[key] = URL{ Url: url, Key: key, Created: time.Now()}
 }
 
-func (s *URLStore) Get(key string) (string, bool) {
+func (s *URLStore) Get(key string) (URL, bool) {
 	s.mutex.Lock()
 	defer s.mutex.Unlock()
 	url, exists := s.urls[key]
@@ -153,7 +160,7 @@ func createRedirectHandler(s *URLStore) func(w http.ResponseWriter, r *http.Requ
 			http.Error(w, "No URL found for key", http.StatusNotFound)
 			return
 		}
-		http.Redirect(w, r, url, http.StatusSeeOther)
+		http.Redirect(w, r, url.Url, http.StatusSeeOther)
 	}
 }
 func main() {
