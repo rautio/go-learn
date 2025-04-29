@@ -24,6 +24,13 @@ type URL struct {
 	Created time.Time `json:"created"`
 }
 
+type URLStorer interface {
+	Set(key, url string)
+	Get(key string) (URL, bool)
+	SyncToFile()
+	HydrateFromFile()
+}
+
 type URLStore struct {
 	urls  map[string]URL
 	mutex sync.RWMutex
@@ -36,22 +43,22 @@ func NewUrlStore() *URLStore {
 	return store
 }
 
-func (s *URLStore) Set(key, url string) {
-	s.mutex.Lock()
-	defer s.mutex.Unlock()
-	s.urls[key] = URL{ Url: url, Key: key, Created: time.Now()}
+func (store *URLStore) Set(key, url string) {
+	store.mutex.Lock()
+	defer store.mutex.Unlock()
+	store.urls[key] = URL{ Url: url, Key: key, Created: time.Now()}
 }
 
-func (s *URLStore) Get(key string) (URL, bool) {
-	s.mutex.RLock()
-	defer s.mutex.RUnlock()
-	url, exists := s.urls[key]
+func (store *URLStore) Get(key string) (URL, bool) {
+	store.mutex.RLock()
+	defer store.mutex.RUnlock()
+	url, exists := store.urls[key]
 	return url, exists
 }
 
-func (s *URLStore) SyncToFile() {
-	s.mutex.Lock()
-	defer s.mutex.Unlock()
+func (store *URLStore) SyncToFile() {
+	store.mutex.Lock()
+	defer store.mutex.Unlock()
 	file, err := os.Create("urls.txt")
   defer file.Close()
 	if err != nil {
@@ -60,7 +67,7 @@ func (s *URLStore) SyncToFile() {
 	}
 
 	writer := bufio.NewWriter(file)
-	for key, value := range s.urls {
+	for key, value := range store.urls {
     _, err := writer.Write([]byte(fmt.Sprintf("%v: %v\n", key, value)))
     if err != nil {
 			log.Println(err)
@@ -70,7 +77,7 @@ func (s *URLStore) SyncToFile() {
 	writer.Flush()
 }
 
-func (s *URLStore) HydrateFromFile() {
+func (store *URLStore) HydrateFromFile() {
 	file, err := os.Open("urls.txt")
   defer file.Close()
 	if err != nil {
@@ -81,7 +88,7 @@ func (s *URLStore) HydrateFromFile() {
 			line := scanner.Text() // Get the line as a string
 			splits := strings.Split(line, ": ")
 			if len(splits) == 2 {
-				s.Set(splits[0], splits[1])
+				store.Set(splits[0], splits[1])
 			}
 	}
 }
@@ -102,7 +109,7 @@ func generateKey(length int) (string, error) {
 	return string(bytes), nil
 }
 
-func createShortenHandler(s *URLStore) func(w http.ResponseWriter, r *http.Request) {
+func createShortenHandler(store URLStorer) func(w http.ResponseWriter, r *http.Request) {
 	return func(w http.ResponseWriter, r *http.Request) {
 		// Error 1 - method not allowed
 		if r.Method != http.MethodPost {
@@ -135,7 +142,7 @@ func createShortenHandler(s *URLStore) func(w http.ResponseWriter, r *http.Reque
 				http.Error(w, "Error generating shortened key", http.StatusInternalServerError)
 				return
 			}
-			_, exists := s.Get(key_option)
+			_, exists := store.Get(key_option)
 			if !exists {
 				key = key_option
 			} else {
@@ -143,8 +150,8 @@ func createShortenHandler(s *URLStore) func(w http.ResponseWriter, r *http.Reque
 				key_length += 1
 			}
 		}
-		s.Set(key, data.Url)
-		s.SyncToFile()
+		store.Set(key, data.Url)
+		store.SyncToFile()
 		scheme := "http"
 		if r.TLS != nil {
 			scheme = "https"
@@ -153,9 +160,9 @@ func createShortenHandler(s *URLStore) func(w http.ResponseWriter, r *http.Reque
 	}
 }
 
-func createRedirectHandler(s *URLStore) func(w http.ResponseWriter, r *http.Request) {
+func createRedirectHandler(store URLStorer) func(w http.ResponseWriter, r *http.Request) {
 	return func(w http.ResponseWriter, r *http.Request) {
-		url, exists := s.Get(r.PathValue("key"))
+		url, exists := store.Get(r.PathValue("key"))
 		if !exists {
 			http.Error(w, "No URL found for key", http.StatusNotFound)
 			return
@@ -164,7 +171,7 @@ func createRedirectHandler(s *URLStore) func(w http.ResponseWriter, r *http.Requ
 	}
 }
 func main() {
-	store := NewUrlStore()
+	var store URLStorer = NewUrlStore()
 	store.HydrateFromFile()
 	fmt.Println("Engine running...")
 
