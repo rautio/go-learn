@@ -95,11 +95,11 @@ func (store *URLStore) HydrateFromFile() {
 
 
 
-func generateKey(length int) (string, error) {
+func generateKey(length int, r io.Reader) (string, error) {
 	const chars = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789"
 	bytes := make([]byte, length)
 	// Inject bytes with random numbers
-	if _, err := rand.Read(bytes); err != nil {
+	if _, err := r.Read(bytes); err != nil {
 		return "", err
 	}
 	// Use the random numbers to pull random characters from chars
@@ -136,7 +136,7 @@ func createShortenHandler(store URLStorer) func(w http.ResponseWriter, r *http.R
 		var key string
 		key_length := 6
 		for key == "" {
-			key_option, err := generateKey(key_length)
+			key_option, err := generateKey(key_length, rand.Reader)
 			if err != nil {
 				log.Println(err)
 				http.Error(w, "Error generating shortened key", http.StatusInternalServerError)
