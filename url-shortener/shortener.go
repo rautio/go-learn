@@ -43,8 +43,8 @@ func (s *URLStore) Set(key, url string) {
 }
 
 func (s *URLStore) Get(key string) (URL, bool) {
-	s.mutex.Lock()
-	defer s.mutex.Unlock()
+	s.mutex.RLock()
+	defer s.mutex.RUnlock()
 	url, exists := s.urls[key]
 	return url, exists
 }
