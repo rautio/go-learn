@@ -9,6 +9,7 @@ import (
 	"log"
 	"net/http"
 	"os"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -25,7 +26,7 @@ type URL struct {
 }
 
 type URLStorer interface {
-	Set(key, url string)
+	Set(key, url string, created time.Time)
 	Get(key string) (URL, bool)
 	SyncToFile()
 	HydrateFromFile()
@@ -43,10 +44,10 @@ func NewUrlStore() *URLStore {
 	return store
 }
 
-func (store *URLStore) Set(key, url string) {
+func (store *URLStore) Set(key, url string, created time.Time) {
 	store.mutex.Lock()
 	defer store.mutex.Unlock()
-	store.urls[key] = URL{ Url: url, Key: key, Created: time.Now()}
+	store.urls[key] = URL{ Url: url, Key: key, Created: created}
 }
 
 func (store *URLStore) Get(key string) (URL, bool) {
@@ -68,7 +69,8 @@ func (store *URLStore) SyncToFile() {
 
 	writer := bufio.NewWriter(file)
 	for key, value := range store.urls {
-    _, err := writer.Write([]byte(fmt.Sprintf("%v: %v\n", key, value)))
+		// URL, Created
+    _, err := writer.Write([]byte(fmt.Sprintf("%v ** %v ** %v\n", key, value.Url, value.Created.Unix())))
     if err != nil {
 			log.Println(err)
 			panic(err)
@@ -81,14 +83,24 @@ func (store *URLStore) HydrateFromFile() {
 	file, err := os.Open("urls.txt")
   defer file.Close()
 	if err != nil {
-		log.Println(err)
+		// File likely doesn't exist, create it
+		file, err = os.Create("urls.txt")
+		if err != nil { 
+			log.Println("Error creating file:", err)
+		}
 	}
 	scanner := bufio.NewScanner(file)
 	for scanner.Scan() {
 			line := scanner.Text() // Get the line as a string
-			splits := strings.Split(line, ": ")
-			if len(splits) == 2 {
-				store.Set(splits[0], splits[1])
+			splits := strings.Split(line, " ** ")
+			if len(splits) == 3 {
+				timestamp, err := strconv.ParseInt(splits[2], 10, 64)
+				created := time.Unix(timestamp, 0)
+				if err != nil {
+					log.Println("Error parsing time:", err)
+				} else {
+					store.Set(splits[0], splits[1], created)
+				}
 			}
 	}
 }
@@ -150,7 +162,7 @@ func createShortenHandler(store URLStorer) func(w http.ResponseWriter, r *http.R
 				key_length += 1
 			}
 		}
-		store.Set(key, data.Url)
+		store.Set(key, data.Url, time.Now())
 		store.SyncToFile()
 		scheme := "http"
 		if r.TLS != nil {
